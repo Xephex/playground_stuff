@@ -27,7 +27,7 @@ except AttributeError as e:
 gpu = [d for d in devs if d[0].startswith(("CUDA", "GPU"))]
 if not gpu:
     print(
-        "\nNO CUDA DEVICE. Check: NVIDIA driver >= 570, nvidia-*-cu12 wheels installed, Python 3.12."
+        "\nNO CUDA DEVICE. Check: NVIDIA driver >= 570, nvidia-*-cu12 wheels installed, Python 3.14."
     )
     sys.exit(1)
 print(f"\nGPU OK: {gpu[0][1]}")

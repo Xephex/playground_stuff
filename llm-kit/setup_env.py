@@ -24,10 +24,10 @@ def main() -> None:
     ap.add_argument("--no-join", action="store_true")
     a = ap.parse_args()
 
-    if sys.version_info[:2] != (3, 12):
+    if sys.version_info[:2] != (3, 14):
         sys.exit(
-            f"This bundle ships cp312 wheels; you are on Python {sys.version.split()[0]}. "
-            "Install Python 3.12 (python.org or Microsoft Store) and rerun with it."
+            f"This bundle ships cp314 wheels; you are on Python {sys.version.split()[0]}. "
+            "Install Python 3.14 (python.org or Microsoft Store) and rerun with it."
         )
     if os.name != "nt":
         print(

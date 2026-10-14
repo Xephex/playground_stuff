@@ -6,9 +6,30 @@ Large files are stored as `*.partNNN` chunks (under 95 MB each) because GitHub r
 
 ## Requirements on the laptop
 
-- Python **3.12** (the bundled wheels are `cp312-win_amd64`). Check with `python --version`.
+- Python **3.14** x64 (the bundled wheels are `cp314-win_amd64`; built and checked against 3.14.7). Check with `python --version`. If `python` still starts an older version, use `py -3.14` in place of `python` in every command below.
 - NVIDIA driver 570 or newer (`nvidia-smi` lives in `C:\Windows\System32`, so it is allowed to run).
 - ~55 GB free disk during setup (chunks + reassembled files; delete the `.part` files afterwards, which `setup_env.py` does once each file verifies).
+
+## Updating an existing copy (Python 3.12 -> 3.14)
+
+Already cloned this before? Do not re-clone. `git pull` downloads only what changed: the Python 3.14 wheels and the model chunks that were missing (gpt-oss-20b was incomplete, granite-4.2-8b was absent). Models you already reassembled are verified and skipped, not rebuilt.
+
+```
+cd playground_stuff
+git pull --no-rebase
+cd llm-kit
+py -3.14 --version
+py -3.14 setup_env.py
+```
+
+`py -3.14 --version` must print `Python 3.14.x`; install Python 3.14 first if it does not. If you set up a venv, make a new one, because a 3.12 venv cannot be upgraded in place:
+
+```
+py -3.14 -m venv .venv314
+.venv314\Scripts\python.exe setup_env.py --no-join
+```
+
+Use `--no-rebase` exactly as shown: setup deletes `.part` files after reassembling them, and a rebasing pull refuses to run with those deletions pending. Do not run `git checkout -- .` or `git stash` to "clean up"; that would restore every deleted chunk (about 40 GB). Your reassembled `.gguf` files are untracked and `git pull` leaves them alone.
 
 ## Setup (once)
 
@@ -52,7 +73,7 @@ Speeds are from published runs on 8 GB RTX 4060 / 2080 cards; this GPU has more 
 
 ## How the GPU path works without executables
 
-- `llama_cpp_python-0.4.2+cu128-cp312-win_amd64.whl` is the [JamePeng fork](https://github.com/JamePeng/llama-cpp-python) built for CUDA 12.8; it contains `llama.dll` and `ggml-cuda.dll`, which `python.exe` loads as libraries.
+- `llama_cpp_python-0.4.2+cu128-cp314-cp314-win_amd64.whl` is the [JamePeng fork](https://github.com/JamePeng/llama-cpp-python) built for CUDA 12.8; it contains `llama.dll` and `ggml-cuda.dll`, which `python.exe` loads as libraries.
 - `nvidia_cublas_cu12` and `nvidia_cuda_runtime_cu12` wheels supply `cublas64_12.dll` and `cudart64_12.dll`; `run\_common.py` adds their folders to the DLL search path at import time.
 - AppLocker's default rules block process launches from the user profile but do **not** evaluate DLL loads (the DLL rule collection is off by default). If your organization enabled DLL rules or strict WDAC, this kit will fail at `check_gpu.py` with a load error, and you will need an exception.
 
@@ -61,7 +82,7 @@ Be aware of what you are doing: the llama-cpp wheel is a community build, not si
 ## Troubleshooting
 
 - `check_gpu.py` says `NO CUDA DEVICE`: run `nvidia-smi`; driver must be >= 570. Then `python -c "import nvidia.cublas, os; print(os.listdir(os.path.dirname(nvidia.cublas.__file__)+'/bin'))"` should list `cublas64_12.dll`.
-- `ImportError: DLL load failed` on `import llama_cpp`: DLL rules are on, or Python is not 3.12 x64.
+- `ImportError: DLL load failed` on `import llama_cpp`: DLL rules are on, or Python is not 3.14 x64.
 - Out of memory loading `qwen3.5-9b`: close the browser, or add `--n-ctx 8192`.
 - MoE model slow: lower `--n-cpu-moe` in steps of 5 until it fails to load, then go back one step.
 - Adding another model: drop a `.gguf` under `models\<folder>\`, add a line to `REGISTRY` in `run\_common.py`.
@@ -72,7 +93,7 @@ Be aware of what you are doing: the llama-cpp wheel is a community build, not si
 llm-kit/
   setup_env.py        reassemble + install + GPU check
   split_tool.py       split/join/verify (python split_tool.py --help)
-  wheels/             win_amd64 cp312 wheels (+ .part chunks for the big one), SHA256SUMS
+  wheels/             win_amd64 cp314 wheels (+ .part chunks for the big one), SHA256SUMS
   models/<name>/      .gguf files as .partNNN chunks + .sha256
   run/                chat.py, webchat.py, serve.py, check_gpu.py, _common.py
   docs/               research notes

@@ -96,9 +96,9 @@ This gives you the same engine and speeds as LM Studio/Ollama, including `--n-cp
    ```
    python -m pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
    ```
-3. **Install a prebuilt Blackwell wheel of llama-cpp-python.** Use the JamePeng fork: it is current (0.4.2, 2026-10-03), ships Windows `cu128` wheels for Python 3.10-3.14, has `cpu_moe` / `n_cpu_moe` as direct `Llama()` arguments, and handles Gemma 4 audio/vision, Qwen3-VL and Qwen3-ASR through its multimodal handler. Download the wheel for your Python version from https://github.com/JamePeng/llama-cpp-python/releases/tag/v0.4.2-cu128-win-20261003 (e.g. `llama_cpp_python-0.4.2+cu128-cp312-cp312-win_amd64.whl`, ~148 MB) and:
+3. **Install a prebuilt Blackwell wheel of llama-cpp-python.** Use the JamePeng fork: it is current (0.4.2, 2026-10-03), ships Windows `cu128` wheels for Python 3.10-3.14, has `cpu_moe` / `n_cpu_moe` as direct `Llama()` arguments, and handles Gemma 4 audio/vision, Qwen3-VL and Qwen3-ASR through its multimodal handler. Download the wheel for your Python version from https://github.com/JamePeng/llama-cpp-python/releases/tag/v0.4.2-cu128-win-20261003 (e.g. `llama_cpp_python-0.4.2+cu128-cp314-cp314-win_amd64.whl`, ~148 MB) and:
    ```
-   python -m pip install llama_cpp_python-0.4.2+cu128-cp312-cp312-win_amd64.whl
+   python -m pip install llama_cpp_python-0.4.2+cu128-cp314-cp314-win_amd64.whl
    python -c "from llama_cpp import Llama; print('ok')"
    ```
    Alternative: dougeeai publishes a single `0.3.20+cuda13.0.sm100.sm120.blackwell-py3-none-win_amd64.whl` compiled specifically for sm_120 and lists the RTX PRO 2000 Blackwell Laptop as a target, but it needs CUDA 13 DLLs (`cublas64_13.dll`), so pair it with `python -m pip install nvidia-cuda-runtime nvidia-cublas` (the unsuffixed CUDA 13 packages) and driver 580+. The upstream abetlen wheels stop at CUDA 12.5 and do not advertise sm_120; avoid them here.
