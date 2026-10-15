@@ -3,10 +3,10 @@
     py -3.14 kit.py            # menu: chat, browser chat, API server, setup, update, status
     py -3.14 kit.py setup      # or run one action directly: setup | update | status | chat | web | serve | share
 
-Runs entirely inside python.exe. The only other programs it starts are
-pip (as `python -m pip`), git (for update) and nvidia-smi (read-only GPU
-info, lives in C:\\Windows\\System32). If any of those are missing it says
-so and carries on with what it can do.
+Runs entirely inside python.exe. Setup deletes the .exe launchers pip
+creates for the kit's packages, so none exist to run. The only other
+programs it starts are system-installed ones: py (the Python launcher),
+git (for update) and nvidia-smi (read-only GPU info, in C:\\Windows\\System32).
 """
 
 import argparse, importlib.metadata as md, json, os, pathlib, runpy, shutil, subprocess, sys
@@ -235,8 +235,43 @@ def do_setup(_=None):
         say("  pip failed (see message above). Nothing was downloaded; fix the reported problem and rerun setup.")
         return False
 
+    removed = remove_launchers()
+    if removed:
+        say(f"  removed {len(removed)} .exe launchers pip created (the kit never runs them)")
+
     say("Step 4/4  GPU check")
     return do_gpucheck()
+
+
+def kit_dist_names():
+    """Normalized names of every package shipped in wheels\\."""
+    import re
+    names = set()
+    for w in list(WHEELS.glob("*.whl")) + list(WHEELS.glob("*.whl.sha256")):
+        names.add(re.sub(r"[-_.]+", "-", w.name.split("-")[0]).lower())
+    return names
+
+
+def remove_launchers():
+    """Delete the Scripts\\*.exe launchers pip generates for the kit's packages.
+
+    Only files listed in each kit package's own install RECORD and ending in
+    .exe are touched; nothing else in Scripts\\ is.
+    """
+    import re
+    ours = kit_dist_names()
+    removed = []
+    for dist in md.distributions():
+        name = re.sub(r"[-_.]+", "-", dist.metadata["Name"] or "").lower()
+        if name not in ours:
+            continue
+        for f in dist.files or []:
+            if str(f).lower().endswith(".exe"):
+                path = pathlib.Path(f.locate())
+                if path.is_file():
+                    path.unlink()
+                    removed.append(path)
+    return removed
 
 
 def do_gpucheck(_=None):

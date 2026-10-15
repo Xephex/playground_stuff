@@ -109,6 +109,8 @@ Speeds are from published runs on 8 GB RTX 4060 / 2080 cards; this GPU has more 
 
 ## How the GPU path works without executables
 
+- pip normally creates `.exe` launchers (`gradio.exe`, `uvicorn.exe`, ...) in Python's `Scripts` folder. `kit.py setup` deletes them right after installing, removing only launchers listed in the kit's own packages' install records. Nothing in the kit uses them; everything runs as `python -m ...` or `python script.py`.
+
 - `llama_cpp_python-0.4.2+cu128-cp314-cp314-win_amd64.whl` is the [JamePeng fork](https://github.com/JamePeng/llama-cpp-python) built for CUDA 12.8; it contains `llama.dll` and `ggml-cuda.dll`, which `python.exe` loads as libraries.
 - `nvidia_cublas_cu12` and `nvidia_cuda_runtime_cu12` wheels supply `cublas64_12.dll` and `cudart64_12.dll`; `run\_common.py` adds their folders to the DLL search path at import time.
 - AppLocker's default rules block process launches from the user profile but do **not** evaluate DLL loads (the DLL rule collection is off by default). If your organization enabled DLL rules or strict WDAC, this kit will fail at `check_gpu.py` with a load error, and you will need an exception.
