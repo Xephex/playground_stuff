@@ -38,6 +38,7 @@ jobs:
             /llm-kit/*.py
             /llm-kit/run/
             /llm-kit/tools/
+            /llm-kit/tests/
             /llm-kit/wheels/
             /llm-kit/models/MANIFEST.txt
             /llm-kit/models/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf.*
@@ -90,6 +91,15 @@ jobs:
           }
           if ($left.Count) { throw "kit setup left these launchers: $($left -join ', ')" }
           "OK: no kit launchers in Scripts"
+
+      - name: Unit tests (tool calls, server responses) in the installed environment
+        working-directory: llm-kit
+        run: |
+          python -m unittest discover -s tests -v 2>&1 | Tee-Object -FilePath "../$env:LOGS/unittest.log"
+          if ($LASTEXITCODE -ne 0) { throw "unit tests failed (exit $LASTEXITCODE)" }
+          if (Select-String -Path "../$env:LOGS/unittest.log" -Pattern "skipped 'llama-cpp-python is not installed'" -Quiet) {
+            throw "server tool-call tests were skipped: llama-cpp-python is not importable after setup"
+          }
 
       - name: kit.py ask (one-shot answer)
         timeout-minutes: 20

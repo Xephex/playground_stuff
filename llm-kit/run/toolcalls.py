@@ -235,14 +235,26 @@ def fix_request_types():
 def relax_response_check(app):
     """0.4.2's response model also types tool_calls as one object, so a reply with
     tool calls fails the server's own output check. The kit already returns
-    OpenAI-shaped responses, so skip that check on the chat route."""
-    from fastapi.routing import APIRoute
+    OpenAI-shaped responses, so skip that check on the chat route.
 
-    for route in app.routes:
+    FastAPI builds a route's handler when the route is created, and FastAPI 0.143
+    builds a separate copy for each app that includes the router (from the
+    router's own route), so change the router's route and rebuild every handler."""
+    from fastapi.routing import APIRoute, request_response
+    from llama_cpp.server.app import router
+
+    def clear(route):
+        route.response_model = None
+        route.response_field = None
+        route.secure_cloned_response_field = None
+        route.app = request_response(route.get_route_handler())
+
+    for route in router.routes:
         if isinstance(route, APIRoute) and route.path == "/v1/chat/completions":
-            route.response_model = None
-            route.response_field = None
-            route.secure_cloned_response_field = None
+            clear(route)
+    for route in app.routes:  # FastAPI before 0.143 copies routes into the app
+        if isinstance(route, APIRoute) and route.path == "/v1/chat/completions":
+            clear(route)
 
 
 def install():
