@@ -33,6 +33,8 @@ if gpu:
     print(f"\nGPU OK: {gpu[0][1]}")
     sys.exit(0)
 
+cuda = lib_dir / "ggml-cuda.dll"
+
 # No GPU device: ask CUDA itself why, instead of guessing.
 print("\nNO CUDA DEVICE. Asking the NVIDIA driver directly:")
 win = os.name == "nt"
@@ -86,5 +88,17 @@ try:
         print(f"  {CU_ERR.get(err, 'runtime error; send this output')}")
 except OSError as e:
     print(f"  CUDA runtime DLL failed to load ({e}): rerun setup.")
-print("  The driver sees the GPU but llama.cpp's CUDA plug-in did not register it. Send this whole output.")
+print("  The driver sees the GPU but llama.cpp's CUDA plug-in did not register it.")
+if win:
+    # Load the plug-in the way llama.cpp does (plain LoadLibraryW) to get the real Windows error.
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    k32.LoadLibraryW.restype = ctypes.c_void_p
+    if k32.LoadLibraryW(str(cuda)):
+        print("  ggml-cuda.dll loads the way llama.cpp loads it; send this whole output.")
+    else:
+        code = ctypes.get_last_error()
+        print(f"  Loading ggml-cuda.dll the way llama.cpp does fails with Windows error {code}"
+              + (" (a DLL it needs is not on PATH)." if code == 126 else "."))
+        print("  PATH entries for NVIDIA DLLs:", [p for p in os.environ["PATH"].split(os.pathsep) if "nvidia" in p.lower()] or "none")
+print("Send this whole output.")
 sys.exit(1)

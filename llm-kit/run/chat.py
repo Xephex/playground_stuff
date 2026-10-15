@@ -8,7 +8,7 @@ python run\chat.py --model gemma4-e4b --image photo.jpg   (one image for the fir
 import argparse, base64, pathlib, sys, time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
-from _common import REGISTRY, load, mmproj
+from _common import REGISTRY, add_nvidia_dlls, load, mmproj
 
 
 def main() -> None:
@@ -38,6 +38,7 @@ def main() -> None:
     if a.image:
         if not proj:
             sys.exit(f"{a.model} has no vision projector")
+        add_nvidia_dlls()
         from llama_cpp.llama_chat_format import GenericMtmdChatHandler
 
         handler = GenericMtmdChatHandler(clip_model_path=proj)

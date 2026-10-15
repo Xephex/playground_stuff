@@ -56,6 +56,10 @@ def add_nvidia_dlls() -> None:
         if nv.is_dir():
             for d in nv.glob("*/bin"):
                 os.add_dll_directory(str(d))
+                # llama.cpp loads ggml-cuda.dll with plain LoadLibraryW, which ignores
+                # add_dll_directory and searches PATH, so the CUDA DLLs must be on PATH too.
+                if str(d) not in os.environ["PATH"].split(os.pathsep):
+                    os.environ["PATH"] = str(d) + os.pathsep + os.environ["PATH"]
 
 
 def load(model_id: str, **overrides):
