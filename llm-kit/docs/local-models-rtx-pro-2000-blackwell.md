@@ -65,33 +65,15 @@ Not recommended on this hardware even with 64 GB RAM: Devstral Small 2 24B and Q
 - TensorRT-LLM and NVIDIA NIM target the RTX PRO Blackwell server/desktop parts; there are no published laptop RTX PRO 2000 results. llama.cpp is the tested path.
 - Ollama's gemma4 library currently only has the 31B tag; pull Gemma 4 E2B/E4B/12B/26B QAT GGUFs from Hugging Face (`google/gemma-4-*-it-qat-q4_0-gguf`).
 
-## Running them on a locked-down laptop (no .exe allowed, Python allowed)
+## Running them with Python only
 
-Assumption: Windows 11 with application control (AppLocker or WDAC) that blocks executables the user downloads, while `python.exe` and `pip` are permitted. Verify the actual policy before building on this; the behavior below is the Microsoft-documented default.
-
-### What the lockdown actually blocks
-
-- AppLocker's default executable rules allow programs under `C:\Windows` and `C:\Program Files*` and block anything launched from the user profile (`%LOCALAPPDATA%`, `%APPDATA%`, Downloads). That is where LM Studio, Ollama and GPT4All install.
-- The DLL rule collection is **off by default**. A `.dll` or `.pyd` that Python loads into its own process is not a process launch and is not blocked. This is the loophole that makes everything below work: llama.cpp's CUDA code and NVIDIA's cuBLAS ship as DLLs that `python.exe` loads.
-- pip-created console scripts (`Scripts\foo.exe`) **are** executables and will be blocked. Always launch tools as `python -m <module>`, never by their shim name.
-- If IT has turned DLL rules on, or uses WDAC in a strict mode, none of this works and you need an exception request. Test early: `python -c "import ctypes, nvidia.cublas"` after step 2 below tells you in ten seconds.
-
-### The desktop apps
-
-| App | Verdict | Why |
-|---|---|---|
-| **LM Studio** | Blocked | NSIS `.exe` installer into `%LOCALAPPDATA%\Programs`; the app and its llama.cpp backend are separate executables that must each be allowed. No Microsoft Store build. The `lms` CLI and `lmstudio` pip package only talk to a running desktop app. |
-| **Ollama** | Blocked | `OllamaSetup.exe` installer, plus `ollama.exe serve` and `ollama app.exe` child processes. The portable zip still needs `ollama.exe` to run. |
-| **GPT4All** | Blocked | `.exe` installer only; no portable or Store build. |
-| **Jan** | Maybe | Jan is on the Microsoft Store as an MSIX package (`apps.microsoft.com/detail/xpdcnfn5cpzlqb`). Store apps fall under AppLocker's separate "Packaged app" rule collection, which many corporate policies leave open. If the Store works on the laptop, try Jan first: it bundles llama.cpp, runs GGUF models from Hugging Face, and exposes an OpenAI-compatible server on `localhost:1337`. Whether its bundled llama.cpp sidecar is also allowed is `cannot_verify` without testing. |
-
-Short answer to "can I use LM Studio": not unless IT whitelists it. Jan via the Store is the only app-shaped option with a plausible path; otherwise go pure Python.
+The kit runs everything inside Python, with no separate apps to install. LM Studio, Ollama, GPT4All and Jan are the usual desktop alternatives; each ships its own installer and background programs, while the path below needs only Python and pip packages.
 
 ### Recommended: llama.cpp through Python, no compiler, no CUDA Toolkit
 
 This gives you the same engine and speeds as LM Studio/Ollama, including `--n-cpu-moe` for the Tier 3 models, entirely inside `python.exe`.
 
-1. **Check the driver.** Blackwell needs NVIDIA driver 570 or newer (580+ for the CUDA 13 wheels). `nvidia-smi` should run (it lives under `C:\Windows\System32`, so it is allowed) and show the RTX PRO 2000.
+1. **Check the driver.** Blackwell needs NVIDIA driver 570 or newer (580+ for the CUDA 13 wheels). `nvidia-smi` should run and show the RTX PRO 2000.
 2. **Install CUDA runtime DLLs from pip** (no toolkit installer):
    ```
    python -m pip install nvidia-cuda-runtime-cu12 nvidia-cublas-cu12
@@ -110,7 +92,7 @@ This gives you the same engine and speeds as LM Studio/Ollama, including `--n-cp
        os.add_dll_directory(str(d))
    from llama_cpp import Llama
    ```
-5. **Download models with Python**, not the `huggingface-cli` shim:
+5. **Download models with Python:**
    ```
    python -m pip install huggingface_hub
    python -c "from huggingface_hub import hf_hub_download as d; print(d('unsloth/Qwen3.5-9B-GGUF','Qwen3.5-9B-Q4_K_M.gguf'))"
@@ -131,15 +113,14 @@ This gives you the same engine and speeds as LM Studio/Ollama, including `--n-cp
    python -m pip install "llama-cpp-python[server]" --no-deps fastapi uvicorn sse-starlette starlette-context pydantic-settings
    python -m llama_cpp.server --model Qwen3.5-9B-Q4_K_M.gguf --n_gpu_layers -1 --n_ctx 16384 --port 8080
    ```
-   Then point any OpenAI-compatible client (Continue, Cline, a Python script) at `http://localhost:8080/v1`. For a chat window without any executable: `python -m pip install gradio` and a 15-line `gr.ChatInterface` script, or `python -m jupyter lab`. Open WebUI's documented launcher is a console script (`open-webui serve`); it may work as `python -m open_webui serve` but that is `cannot_verify`.
+   Then point any OpenAI-compatible client (Continue, Cline, a Python script) at `http://localhost:8080/v1`. For a chat window: `python -m pip install gradio` and a 15-line `gr.ChatInterface` script, or `python -m jupyter lab`.
 
 ### Plan B: PyTorch stack (works, slower)
 
-If a llama.cpp wheel will not load, `python -m pip install torch --index-url https://download.pytorch.org/whl/cu128` gives an official sm_120 build (PyTorch 2.7+). With `transformers` + `bitsandbytes>=0.43` you can run any HF model in 4-bit NF4 from a Python script. Expect roughly half the tokens/s of llama.cpp on the same model, no MoE-to-RAM trick, and 2-4x the download size (safetensors, not GGUF). `onnxruntime-genai-cuda` with Microsoft's int4 ONNX builds (Phi-4-mini, Gemma, Qwen, Llama) sits between the two in speed. vLLM and SGLang do not run on native Windows; WSL2 would need its own approval.
+If a llama.cpp wheel will not load, `python -m pip install torch --index-url https://download.pytorch.org/whl/cu128` gives an official sm_120 build (PyTorch 2.7+). With `transformers` + `bitsandbytes>=0.43` you can run any HF model in 4-bit NF4 from a Python script. Expect roughly half the tokens/s of llama.cpp on the same model, no MoE-to-RAM trick, and 2-4x the download size (safetensors, not GGUF). `onnxruntime-genai-cuda` with Microsoft's int4 ONNX builds (Phi-4-mini, Gemma, Qwen, Llama) sits between the two in speed. vLLM and SGLang do not run on native Windows.
 
 ### Sources for this section
 
-- AppLocker default rules and DLL rule collection: https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/applocker/understanding-applocker-default-rules and https://learn.microsoft.com/en-us/windows/security/application-security/application-control/app-control-for-business/applocker/dll-rules-in-applocker
 - LM Studio install/CLI: https://lmstudio.ai/docs/cli ; Ollama Windows: https://docs.ollama.com/windows ; GPT4All releases: https://github.com/nomic-ai/gpt4all/releases ; Jan on the Store: https://apps.microsoft.com/detail/xpdcnfn5cpzlqb
 - JamePeng llama-cpp-python (cu128 Windows wheels, `n_cpu_moe` kwarg): https://github.com/JamePeng/llama-cpp-python/releases/tag/v0.4.2-cu128-win-20261003 and `llama_cpp/llama.py` in that repo
 - dougeeai Blackwell wheels: https://github.com/dougeeai/llama-cpp-python-wheels

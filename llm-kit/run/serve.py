@@ -4,7 +4,7 @@ r"""OpenAI-compatible API on http://127.0.0.1:8080/v1 for editors and tools
     python run\serve.py --model qwen3.5-9b
     python run\serve.py --model qwen3.6-35b-a3b --n-cpu-moe 30
 
-Wraps `python -m llama_cpp.server` so you never need a console-script .exe.
+Wraps `python -m llama_cpp.server`.
 """
 
 import argparse, pathlib, runpy, sys

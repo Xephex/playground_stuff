@@ -3,7 +3,7 @@
     python setup_env.py            # does everything
     python setup_env.py --no-join  # skip chunk reassembly (already done)
 
-Runs entirely inside python.exe. Never launches another executable.
+Runs entirely inside python.exe.
 """
 
 import argparse, os, pathlib, subprocess, sys
@@ -38,7 +38,6 @@ def main() -> None:
         run_py(str(ROOT / "split_tool.py"), "join", str(WHEELS))
         run_py(str(ROOT / "split_tool.py"), "join", str(MODELS))
 
-    # pip itself is a module, so this is allowed even when Scripts\pip.exe is not.
     run_py(
         "-m",
         "pip",

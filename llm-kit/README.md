@@ -1,6 +1,6 @@
-# Offline local-LLM kit for a locked-down Windows laptop
+# Offline local-LLM kit for Windows
 
-Everything needed to run open-weight models on an NVIDIA RTX PRO 2000 Blackwell laptop (8 GB VRAM, 64 GB RAM) using only `python.exe`. No installers, no `.exe`/`.msi`, no internet after cloning.
+Everything needed to run open-weight models on an NVIDIA RTX PRO 2000 Blackwell laptop (8 GB VRAM, 64 GB RAM) with plain Python. Nothing to install besides Python, and no internet needed after cloning.
 
 Large files are stored as `*.partNNN` chunks (under 95 MB each) because GitHub rejects files over 100 MB. `kit.py setup` reassembles them.
 
@@ -66,7 +66,7 @@ The server runs one model at a time. To switch, stop it and choose 4 again.
 | `'git' is not recognized` | Git is not installed. Download the repo as a ZIP from GitHub instead (green **Code** button, **Download ZIP**), unzip it, and run `py -3.14 kit.py setup` inside `llm-kit`. To update later, download the ZIP again. |
 | `Not enough disk` | The first setup needs about 55 GB free. Free up space and run setup again; finished files are kept. |
 | `GPU check failed` / `NO CUDA DEVICE` | Run `py -3.14 kit.py gpucheck`. It asks the NVIDIA driver directly and prints the reason: GPU switched off (laptop graphics mode set to integrated/eco, battery saver, or disabled in Device Manager), driver too old, or a missing DLL. |
-| `DLL load failed` | Your organization blocks DLLs from user folders. Ask IT to allow this folder; nothing in the kit can work around that. |
+| `DLL load failed` | Run `py -3.14 kit.py gpucheck` and send its output. |
 | Out of memory with a big model | Use a smaller model, or close the browser and other GPU apps. |
 
 Do **not** run `git checkout -- .`, `git stash` or `git reset` to "clean up". Setup deletes the downloaded chunk files after joining them, and those commands bring all of them back (about 40 GB).
@@ -88,7 +88,7 @@ The menu does all of this. These are for scripts or shortcuts; all of them take 
 
 ## Requirements
 
-- Windows 11 x64 with NVIDIA driver 570 or newer (`nvidia-smi` lives in `C:\Windows\System32`, so it is allowed to run).
+- Windows 11 x64 with NVIDIA driver 570 or newer (`nvidia-smi` shows the version).
 - Python **3.14** x64; the bundled wheels are `cp314-win_amd64`, built and checked against 3.14.7. The Microsoft Store build is fine and needs no admin rights.
 - About 55 GB free disk during the first setup.
 
@@ -107,20 +107,19 @@ Licenses: Qwen, Gemma 4, Granite, gpt-oss are all Apache 2.0. Each model folder 
 
 Speeds are from published runs on 8 GB RTX 4060 / 2080 cards; this GPU has more bandwidth, so expect similar or better on mains power. Full research notes with sources: `docs/local-models-rtx-pro-2000-blackwell.md`.
 
-## How the GPU path works without executables
+## How it works
 
-- pip normally creates `.exe` launchers (`gradio.exe`, `uvicorn.exe`, ...) in Python's `Scripts` folder. `kit.py setup` deletes them right after installing, removing only launchers listed in the kit's own packages' install records. Nothing in the kit uses them; everything runs as `python -m ...` or `python script.py`.
+- Everything runs as `python -m ...` or `python script.py`. pip normally also creates `.exe` launchers (`gradio.exe`, `uvicorn.exe`, ...) in Python's `Scripts` folder; the kit does not use them, so `kit.py setup` removes them (only launchers listed in the kit's own packages' install records).
 
 - `llama_cpp_python-0.4.2+cu128-cp314-cp314-win_amd64.whl` is the [JamePeng fork](https://github.com/JamePeng/llama-cpp-python) built for CUDA 12.8; it contains `llama.dll` and `ggml-cuda.dll`, which `python.exe` loads as libraries.
-- `nvidia_cublas_cu12` and `nvidia_cuda_runtime_cu12` wheels supply `cublas64_12.dll` and `cudart64_12.dll`; `run\_common.py` adds their folders to the DLL search path at import time.
-- AppLocker's default rules block process launches from the user profile but do **not** evaluate DLL loads (the DLL rule collection is off by default). If your organization enabled DLL rules or strict WDAC, this kit will fail at `check_gpu.py` with a load error, and you will need an exception.
+- `nvidia_cublas_cu12` and `nvidia_cuda_runtime_cu12` wheels supply `cublas64_12.dll` and `cudart64_12.dll`; `run\_common.py` adds their folders to the DLL search path and PATH at import time, so no CUDA Toolkit install is needed.
 
-Be aware of what you are doing: the llama-cpp wheel is a community build, not signed by NVIDIA or Microsoft. Its SHA-256 is in `wheels/SHA256SUMS`. If your workplace policy treats unsigned native code as prohibited regardless of mechanism, ask before using it.
+The llama-cpp-python wheel is a community build from the JamePeng fork; its SHA-256 is in `wheels/SHA256SUMS`.
 
 ## Troubleshooting (details)
 
 - GPU check says `NO CUDA DEVICE`: run `nvidia-smi`; driver must be >= 570. Then `py -3.14 -c "import nvidia.cublas, os; print(os.listdir(os.path.dirname(nvidia.cublas.__file__)+'/bin'))"` should list `cublas64_12.dll`.
-- `ImportError: DLL load failed` on `import llama_cpp`: DLL rules are on, or Python is not 3.14 x64.
+- `ImportError: DLL load failed` on `import llama_cpp`: Python is not 3.14 x64, or setup did not finish; rerun setup.
 - Out of memory loading `qwen3.5-9b`: close the browser, or add `--n-ctx 8192`.
 - MoE model slow: lower `--n-cpu-moe` in steps of 5 until it fails to load, then go back one step.
 - Adding another model: drop a `.gguf` under `models\<folder>\`, add a line to `REGISTRY` in `run\_common.py`.
