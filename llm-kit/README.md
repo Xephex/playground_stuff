@@ -37,14 +37,26 @@ That opens this menu:
 ------------------------------------------
  1) Chat here in this window
  2) Chat in the browser
- 3) Start API server for editors (OpenAI-compatible)
- 4) Setup / repair
- 5) Update from GitHub, then setup
- 6) Status details
+ 3) Start API server for editors (this laptop only)
+ 4) Share API with n8n / other machines (needs key)
+ 5) Setup / repair
+ 6) Update from GitHub, then setup
+ 7) Status details
  q) Quit
 >
 ```
-Type a number and press Enter. Options 1-3 then ask which model; press Enter for the default. To leave a chat, type `exit`. To stop the browser chat or API server, press `Ctrl+C`.
+Type a number and press Enter. Options 1-4 then ask which model; press Enter for the default. To leave a chat, type `exit`. To stop the browser chat or API server, press `Ctrl+C`.
+
+### Use the models from n8n
+
+1. On the laptop: `py -3.14 kit.py`, choose **4**, and pick a model. `granite-4.2-8b` is the best one here for agents and tool calling; `qwen3.5-9b` is better for plain text.
+2. The window prints an **API Key**, one or more **Base URL**s and the **model name**. The key is generated once and stays the same every time.
+3. In n8n: **Credentials > Add credential > OpenAI**. Paste the API Key, and set **Base URL** to the one printed (`http://<laptop-ip>:8080/v1`). Save; n8n tests the connection.
+4. In a workflow, add an **OpenAI Chat Model** node (or an **AI Agent** with that chat model), pick that credential, and type the model name from step 2 in **Model** (choose "By ID" if it shows a list).
+
+Leave the window open while n8n uses it; `Ctrl+C` stops sharing. If Windows asks whether Python may use networks, choose **Private networks**. If n8n cannot connect, the machine running n8n cannot reach the laptop: same network, and no company firewall or VPN in between. Your laptop's IP can change; check the window each time.
+
+The server runs one model at a time. To switch, stop it and choose 4 again.
 
 ### If something goes wrong
 
@@ -68,6 +80,7 @@ The menu does all of this. These are for scripts or shortcuts; all of them take 
 | Chat in this window | `py -3.14 kit.py chat --model qwen3.5-4b` |
 | Browser chat (http://127.0.0.1:7860) | `py -3.14 kit.py web` |
 | API for editors (http://127.0.0.1:8080/v1) | `py -3.14 kit.py serve --model qwen3.5-9b` |
+| API shared for n8n, with key | `py -3.14 kit.py share --model granite-4.2-8b` |
 | Check what is installed and ready | `py -3.14 kit.py status` |
 | Update from GitHub and install | `py -3.14 kit.py update` |
 | Big MoE model, tuning VRAM use | `py -3.14 run\chat.py --model qwen3.6-35b-a3b --n-cpu-moe 30` (lower = faster, more VRAM) |

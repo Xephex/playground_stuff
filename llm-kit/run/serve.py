@@ -19,6 +19,7 @@ def main() -> None:
     ap.add_argument("--n-cpu-moe", type=int)
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--host", default="127.0.0.1")
+    ap.add_argument("--api-key", help="require this key (Authorization: Bearer KEY)")
     a = ap.parse_args()
     rel, _, extra = REGISTRY[a.model]
     kw = {**DEFAULTS, **extra}
@@ -47,6 +48,8 @@ def main() -> None:
         "--model_alias",
         a.model,
     ]
+    if a.api_key:
+        argv += ["--api_key", a.api_key]
     if kw.get("n_cpu_moe"):
         argv += ["--n_cpu_moe", str(kw["n_cpu_moe"])]
     add_nvidia_dlls()

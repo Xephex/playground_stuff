@@ -1,7 +1,7 @@
 """llm-kit control tool. The only command you need:
 
     py -3.14 kit.py            # menu: chat, browser chat, API server, setup, update, status
-    py -3.14 kit.py setup      # or run one action directly: setup | update | status | chat | web | serve
+    py -3.14 kit.py setup      # or run one action directly: setup | update | status | chat | web | serve | share
 
 Runs entirely inside python.exe. The only other programs it starts are
 pip (as `python -m pip`), git (for update) and nvidia-smi (read-only GPU
@@ -342,36 +342,82 @@ def do_serve(a=None):
         run_script("serve.py", ["--model", mid])
 
 
+def lan_addresses():
+    import socket
+    ips = set()
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))  # no packet is sent; picks the outbound interface
+        ips.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        ips.update(i[4][0] for i in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET))
+    except OSError:
+        pass
+    # Skip loopback, link-local and the usual virtual-switch ranges (WSL, Hyper-V, Docker).
+    skip = ("127.", "169.254.", "172.17.", "172.18.", "172.19.", "172.20.", "172.21.", "172.22.")
+    return sorted(ip for ip in ips if not ip.startswith(skip))
+
+
+def do_share(a=None):
+    """API server reachable from other machines (n8n etc.), protected by a key."""
+    if not ready_to_run():
+        return
+    mid = (a and a.model) or pick_model("granite-4.2-8b")
+    if not mid:
+        return
+    import secrets, socket
+    key = load_state().get("api_key")
+    if not key:
+        key = "llmkit-" + secrets.token_urlsafe(24)
+        save_state(api_key=key)
+    port = 8080
+    say("\nSharing on the network. Anything that can reach this laptop and has the key can use the model.")
+    say("Paste these into n8n (Credentials > New > OpenAI):")
+    say(f"  API Key   {key}")
+    for ip in lan_addresses() or ["<this laptop's IP>"]:
+        say(f"  Base URL  http://{ip}:{port}/v1")
+    say(f"  (laptop name: http://{socket.gethostname()}:{port}/v1)")
+    say(f"Model name to use in n8n: {mid}")
+    say("If Windows asks whether to allow Python on networks, choose Private networks.")
+    say("Press Ctrl+C here to stop sharing.\n")
+    run_script("serve.py", ["--model", mid, "--host", "0.0.0.0", "--port", str(port), "--api-key", key])
+
+
 ACTIONS = {"setup": do_setup, "update": do_update, "status": do_status, "chat": do_chat,
-           "web": do_web, "serve": do_serve, "gpucheck": do_gpucheck}
+           "web": do_web, "serve": do_serve, "share": do_share, "gpucheck": do_gpucheck}
 
 
 def menu():
     while True:
         s = summary()
-        setup_line = "ready" if s["packages_ok"] and s["gpu_ok"] else "needs setup (choose 4)"
+        setup_line = "ready" if s["packages_ok"] and s["gpu_ok"] else "needs setup (choose 5)"
         say("\n================ llm-kit ================")
         say(f" Python {sys.version.split()[0]}   GPU: {s['gpu_name'] or 'not checked yet'}")
         say(f" Setup: {setup_line}   Models ready: {s['ready']}/{len(s['models'])}")
         say("------------------------------------------")
         say(" 1) Chat here in this window")
         say(" 2) Chat in the browser")
-        say(" 3) Start API server for editors (OpenAI-compatible)")
-        say(" 4) Setup / repair")
-        say(" 5) Update from GitHub, then setup")
-        say(" 6) Status details")
+        say(" 3) Start API server for editors (this laptop only)")
+        say(" 4) Share API with n8n / other machines (needs key)")
+        say(" 5) Setup / repair")
+        say(" 6) Update from GitHub, then setup")
+        say(" 7) Status details")
         say(" q) Quit")
         c = ask("> ").lower()
         if c in ("q", "quit", "exit"):
             return
-        fn = {"1": do_chat, "2": do_web, "3": do_serve, "4": do_setup, "5": do_update, "6": do_status}.get(c)
+        fn = {"1": do_chat, "2": do_web, "3": do_serve, "4": do_share, "5": do_setup,
+              "6": do_update, "7": do_status}.get(c)
         if fn:
             say()
             fn()
-            if c in ("4", "5", "6"):
+            if c in ("5", "6", "7"):
                 ask("\nPress Enter to return to the menu...")
         elif c:
-            say("pick 1-6 or q")
+            say("pick 1-7 or q")
 
 
 def main():
