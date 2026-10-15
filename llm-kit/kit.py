@@ -1,7 +1,7 @@
 """llm-kit control tool. The only command you need:
 
     py -3.14 kit.py            # menu: chat, browser chat, API server, setup, update, status
-    py -3.14 kit.py setup      # or run one action directly: setup | update | status | chat | web | serve | share
+    py -3.14 kit.py setup      # or one action: setup update status chat web image docs pi serve share tune ask
 
 Runs entirely inside python.exe. Setup deletes the .exe launchers pip
 creates for the kit's packages, so none exist to run. The only other
@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "run"))
 PACKAGES = [
     "llama_cpp_python", "nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12",
     "huggingface_hub", "gradio", "fastapi", "uvicorn", "sse-starlette",
-    "starlette-context", "pydantic-settings", "diskcache", "jinja2", "numpy",
+    "starlette-context", "pydantic-settings", "diskcache", "jinja2", "numpy", "pypdf",
 ]
 # What each model is good for, shown in the picker.
 NOTES = {
@@ -239,8 +239,42 @@ def do_setup(_=None):
     if removed:
         say(f"  removed {len(removed)} .exe launchers pip created (the kit never runs them)")
 
+    make_shortcut()
+
     say("Step 4/4  GPU check")
-    return do_gpucheck()
+    ok = do_gpucheck()
+    if not ok and os.environ.get("LLMKIT_ALLOW_CPU") == "1":
+        say("LLMKIT_ALLOW_CPU=1: continuing without a GPU (models run on the CPU).")
+        return True
+    return ok
+
+
+def make_shortcut():
+    """Desktop shortcut that opens the menu: runs the system py.exe on kit.py.
+
+    Windows only; written with PowerShell's WScript.Shell COM object. Skipped
+    silently if PowerShell is unavailable."""
+    if os.name != "nt":
+        return
+    desktop = pathlib.Path(os.environ.get("USERPROFILE", "~")).expanduser() / "Desktop"
+    link = desktop / "llm-kit.lnk"
+    if link.exists() or not desktop.is_dir():
+        return
+    launcher = shutil.which("py") or sys.executable
+    args = f'-3.14 "{ROOT / "kit.py"}"' if launcher.lower().endswith("py.exe") else f'"{ROOT / "kit.py"}"'
+    ps = (
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:LLMKIT_LNK);"
+        "$s.TargetPath=$env:LLMKIT_TARGET;$s.Arguments=$env:LLMKIT_ARGS;"
+        "$s.WorkingDirectory=$env:LLMKIT_DIR;$s.Description='llm-kit menu';$s.Save()"
+    )
+    env = dict(os.environ, LLMKIT_LNK=str(link), LLMKIT_TARGET=launcher, LLMKIT_ARGS=args, LLMKIT_DIR=str(ROOT))
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+                           env=env, capture_output=True, timeout=30)
+        if r.returncode == 0:
+            say(f"  desktop shortcut created: {link.name} (double-click to open the menu)")
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def kit_dist_names():
@@ -312,8 +346,8 @@ def do_update(_=None):
     return subprocess.run([sys.executable, str(ROOT / "kit.py"), "setup"], env=env).returncode == 0
 
 
-def pick_model(default="qwen3.5-4b"):
-    ms = model_states()
+def pick_model(default="qwen3.5-4b", only=None):
+    ms = {k: v for k, v in model_states().items() if only is None or k in only}
     ids = list(ms)
     say("Models:")
     for i, mid in enumerate(ids, 1):
@@ -420,44 +454,122 @@ def do_share(a=None):
     run_script("serve.py", ["--model", mid, "--host", "0.0.0.0", "--port", str(port), "--api-key", key])
 
 
+def do_ask(a=None):
+    """One question, one answer, exit (also used by the automatic Windows test)."""
+    if not ready_to_run():
+        return False
+    mid = (a and a.model) or "qwen3.5-4b"
+    question = " ".join(a.text) if a and a.text else ask("question: ")
+    run_script("chat.py", ["--model", mid, "--once", question] +
+               (["--image", a.image] if a and a.image else []))
+
+
+def do_image(a=None):
+    if not ready_to_run():
+        return
+    vision = [m for m in model_states() if mmproj_exists(m)]
+    mid = (a and a.model) or pick_model("qwen3.5-9b", only=vision)
+    if not mid:
+        return
+    f = (a and a.image) or ask("Path to the image (or audio file for gemma4-e4b), drag it here: ").strip('"')
+    if not pathlib.Path(f).is_file():
+        say(f"file not found: {f}")
+        return
+    say("Ask about it below; /image FILE adds another one later.")
+    run_script("chat.py", ["--model", mid, "--image", f])
+
+
+def do_docs(a=None):
+    if not ready_to_run():
+        return
+    mid = (a and a.model) or pick_model("qwen3.5-9b")
+    if not mid:
+        return
+    folder = (a and a.folder) or ask(f"Folder with your documents [Enter = {ROOT / 'docs-inbox'}]: ", str(ROOT / "docs-inbox"))
+    run_script("docs.py", ["--model", mid, "--folder", folder.strip('"')])
+
+
+def do_tune(a=None):
+    if not ready_to_run():
+        return
+    say("Tuning loads each model several times and measures its speed; it takes a few minutes per model.")
+    say("Close other GPU-heavy programs first. Results are saved and used automatically from now on.\n")
+    which = (a and a.model) or ask("Tune which? [Enter = the two big models, a = all]: ", "")
+    if which == "a":
+        run_script("tune.py", ["--all"])
+    elif which:
+        run_script("tune.py", ["--model", which])
+    else:
+        for mid in ("gpt-oss-20b", "qwen3.6-35b-a3b"):
+            run_script("tune.py", ["--model", mid])
+
+
+def do_pi(a=None):
+    if not ready_to_run():
+        return
+    if not shutil.which("node"):
+        say("Pi needs Node.js 20.6 or newer, and `node` was not found on PATH.")
+        return
+    mid = (a and a.model) or pick_model("qwen3.6-35b-a3b")
+    if not mid:
+        return
+    say("Starting Pi (coding agent). It works in the folder you are in now:")
+    say(f"  {pathlib.Path.cwd()}")
+    say("Type /quit in Pi to leave.\n")
+    run_script("pi.py", ["--model", mid])
+
+
+def mmproj_exists(mid):
+    from _common import mmproj
+    return bool(mmproj(mid))
+
+
 ACTIONS = {"setup": do_setup, "update": do_update, "status": do_status, "chat": do_chat,
-           "web": do_web, "serve": do_serve, "share": do_share, "gpucheck": do_gpucheck}
+           "web": do_web, "serve": do_serve, "share": do_share, "gpucheck": do_gpucheck,
+           "ask": do_ask, "image": do_image, "docs": do_docs, "tune": do_tune, "pi": do_pi}
 
 
 def menu():
     while True:
         s = summary()
-        setup_line = "ready" if s["packages_ok"] and s["gpu_ok"] else "needs setup (choose 5)"
+        setup_line = "ready" if s["packages_ok"] and s["gpu_ok"] else "needs setup (choose 9)"
         say("\n================ llm-kit ================")
         say(f" Python {sys.version.split()[0]}   GPU: {s['gpu_name'] or 'not checked yet'}")
         say(f" Setup: {setup_line}   Models ready: {s['ready']}/{len(s['models'])}")
         say("------------------------------------------")
-        say(" 1) Chat here in this window")
-        say(" 2) Chat in the browser")
-        say(" 3) Start API server for editors (this laptop only)")
-        say(" 4) Share API with n8n / other machines (needs key)")
-        say(" 5) Setup / repair")
-        say(" 6) Update from GitHub, then setup")
-        say(" 7) Status details")
-        say(" q) Quit")
+        say("  1) Chat here in this window")
+        say("  2) Chat in the browser")
+        say("  3) Ask about an image (or audio)")
+        say("  4) Ask questions about your documents")
+        say("  5) Pi coding agent")
+        say("  6) API server for editors (this laptop only)")
+        say("  7) Share API with n8n / other machines (needs key)")
+        say("  8) Tune speed for this GPU")
+        say("  9) Setup / repair")
+        say(" 10) Update from GitHub, then setup")
+        say(" 11) Status details")
+        say("  q) Quit")
         c = ask("> ").lower()
         if c in ("q", "quit", "exit"):
             return
-        fn = {"1": do_chat, "2": do_web, "3": do_serve, "4": do_share, "5": do_setup,
-              "6": do_update, "7": do_status}.get(c)
+        fn = {"1": do_chat, "2": do_web, "3": do_image, "4": do_docs, "5": do_pi, "6": do_serve,
+              "7": do_share, "8": do_tune, "9": do_setup, "10": do_update, "11": do_status}.get(c)
         if fn:
             say()
             fn()
-            if c in ("5", "6", "7"):
+            if c in ("8", "9", "10", "11"):
                 ask("\nPress Enter to return to the menu...")
         elif c:
-            say("pick 1-7 or q")
+            say("pick 1-11 or q")
 
 
 def main():
     ap = argparse.ArgumentParser(description="llm-kit: offline local LLMs. Run with no arguments for the menu.")
     ap.add_argument("action", nargs="?", choices=list(ACTIONS))
-    ap.add_argument("--model", help="model id for chat/web/serve (skips the picker)")
+    ap.add_argument("text", nargs="*", help="for ask: the question")
+    ap.add_argument("--model", help="model id (skips the picker)")
+    ap.add_argument("--image", help="for ask/image: an image or audio file")
+    ap.add_argument("--folder", help="for docs: the documents folder")
     a = ap.parse_args()
     ensure_python()
     if a.action:

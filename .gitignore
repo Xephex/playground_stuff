@@ -2,3 +2,9 @@
 __pycache__/
 *.pyc
 .kit-state.json
+llm-kit/chats/
+llm-kit/pi/app/
+llm-kit/pi/agent/
+llm-kit/pi/server.log
+llm-kit/docs-inbox/*
+!llm-kit/docs-inbox/README.txt

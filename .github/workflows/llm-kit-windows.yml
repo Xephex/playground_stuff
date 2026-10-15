@@ -1,0 +1,163 @@
+name: llm-kit Windows smoke test
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "llm-kit/**"
+      - ".github/workflows/llm-kit-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: llm-kit-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUNBUFFERED: "1"
+      PYTHONUTF8: "1"
+      LOGS: ci-logs
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      # Partial clone + sparse checkout: only the kit code, the wheels and the
+      # qwen3.5-4b model chunks are downloaded (~3.5 GB), not the other ~50 GB of models.
+      - name: Checkout (sparse)
+        uses: actions/checkout@v7
+        with:
+          filter: blob:none
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /llm-kit/*.py
+            /llm-kit/run/
+            /llm-kit/tools/
+            /llm-kit/wheels/
+            /llm-kit/models/MANIFEST.txt
+            /llm-kit/models/Qwen3.5-4B-GGUF/Qwen3.5-4B-Q4_K_M.gguf.*
+
+      - name: Set up Python 3.14.7 x64
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14.7"
+          architecture: x64
+
+      - name: Set up uv (used by build_bundle.py verify)
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: false
+
+      - name: Show checkout and interpreter
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:LOGS | Out-Null
+          python -VV
+          uv --version
+          Get-ChildItem llm-kit -Recurse -File |
+            Where-Object { $_.FullName -notmatch '\\__pycache__\\' } |
+            Measure-Object -Property Length -Sum |
+            ForEach-Object { "llm-kit: {0} files, {1:N2} GB" -f $_.Count, ($_.Sum / 1GB) }
+
+      - name: Verify wheel bundle (offline install for Windows/3.14, checksums, tags)
+        run: |
+          python llm-kit/tools/build_bundle.py verify 2>&1 | Tee-Object -FilePath "$env:LOGS/verify.log"
+          if ($LASTEXITCODE -ne 0) { throw "build_bundle.py verify failed (exit $LASTEXITCODE)" }
+
+      - name: kit.py setup (CPU only; runner has no GPU)
+        env:
+          LLMKIT_ALLOW_CPU: "1"
+        run: |
+          python llm-kit/kit.py setup 2>&1 | Tee-Object -FilePath "$env:LOGS/setup.log"
+          if ($LASTEXITCODE -ne 0) { throw "kit.py setup failed (exit $LASTEXITCODE)" }
+
+      - name: No .exe launchers left for kit packages
+        run: |
+          # Interpreter Scripts dir, plus the per-user one in case setup installed with --user.
+          $dirs = @(python -c "import sysconfig; print(sysconfig.get_path('scripts')); print(sysconfig.get_path('scripts', 'nt_user'))")
+          if ($LASTEXITCODE -ne 0 -or -not $dirs) { throw "could not locate the Python Scripts directory" }
+          $forbidden = @('gradio.exe', 'uvicorn.exe', 'fastapi.exe', 'hf.exe', 'tqdm.exe', 'typer.exe',
+                         'httpx.exe', 'f2py.exe', 'numpy-config.exe')
+          $left = @()
+          foreach ($dir in $dirs) {
+            $present = @(Get-ChildItem -Path $dir -Filter *.exe -File -ErrorAction SilentlyContinue | ForEach-Object Name)
+            "$dir\*.exe: " + $(if ($present.Count) { $present -join ', ' } else { '(none)' })
+            $left += @($present | Where-Object { $forbidden -contains $_.ToLowerInvariant() } | ForEach-Object { Join-Path $dir $_ })
+          }
+          if ($left.Count) { throw "kit setup left these launchers: $($left -join ', ')" }
+          "OK: no kit launchers in Scripts"
+
+      - name: kit.py ask (one-shot answer)
+        timeout-minutes: 20
+        run: |
+          $prompt = 'Reply with exactly: CI OK'
+          $out = python llm-kit/kit.py ask --model qwen3.5-4b $prompt 2>&1 |
+            Tee-Object -FilePath "$env:LOGS/ask.log"
+          $rc = $LASTEXITCODE
+          if ($rc -ne 0) { throw "kit.py ask failed (exit $rc)" }
+          # Ignore an echo of the prompt itself; the model's answer must contain CI OK.
+          $text = ($out | Out-String).Replace($prompt, '')
+          if ($text -notmatch '(?i)CI OK') { throw "answer does not contain 'CI OK'" }
+          "OK: answer contains CI OK"
+
+      - name: kit.py serve + OpenAI-compatible request
+        timeout-minutes: 20
+        run: |
+          $base = 'http://127.0.0.1:8080/v1'
+          $proc = Start-Process -FilePath python -PassThru -NoNewWindow `
+            -ArgumentList @('llm-kit/kit.py', 'serve', '--model', 'qwen3.5-4b') `
+            -RedirectStandardOutput "$env:LOGS/serve.log" -RedirectStandardError "$env:LOGS/serve.err.log"
+          "server pid $($proc.Id)"
+          try {
+            $deadline = (Get-Date).AddMinutes(5)
+            $up = $false
+            while ((Get-Date) -lt $deadline) {
+              if ($proc.HasExited) { throw "server exited early with code $($proc.ExitCode)" }
+              try {
+                $models = Invoke-RestMethod -Uri "$base/models" -TimeoutSec 5
+                $up = $true
+                break
+              } catch {
+                Start-Sleep -Seconds 5
+              }
+            }
+            if (-not $up) { throw "server did not answer $base/models within 5 minutes" }
+            "models: " + ($models.data.id -join ', ')
+
+            $body = @{
+              model      = 'qwen3.5-4b'
+              messages   = @(@{ role = 'user'; content = 'Say hello.' })
+              max_tokens = 8
+            } | ConvertTo-Json -Depth 5
+            $resp = Invoke-WebRequest -Uri "$base/chat/completions" -Method Post -Body $body `
+              -ContentType 'application/json' -TimeoutSec 600 -SkipHttpErrorCheck
+            "HTTP $($resp.StatusCode)"
+            $resp.Content | Out-File -FilePath "$env:LOGS/chat-response.json" -Encoding utf8
+            if ($resp.StatusCode -ne 200) { throw "chat completion returned HTTP $($resp.StatusCode): $($resp.Content)" }
+            $json = $resp.Content | ConvertFrom-Json
+            $msg = $json.choices[0].message
+            if (-not $msg -or $msg.role -ne 'assistant') { throw "response has no assistant message: $($resp.Content)" }
+            "assistant: $($msg.content)"
+            "OK: server answered"
+          } finally {
+            if (-not $proc.HasExited) {
+              & taskkill.exe /PID $proc.Id /T /F | Out-Null
+              $proc.WaitForExit(30000) | Out-Null
+            }
+            $global:LASTEXITCODE = 0
+          }
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: llm-kit-windows-logs
+          path: |
+            ci-logs/
+            llm-kit/.kit-state.json
+          if-no-files-found: warn
+          retention-days: 14

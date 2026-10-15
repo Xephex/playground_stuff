@@ -39,7 +39,7 @@ REGISTRY = {
 DEFAULTS = dict(
     n_gpu_layers=-1,
     n_ctx=16384,
-    flash_attn=True,
+    flash_attn_type=1,  # 1 = on (llama-cpp-python 0.4.x; the old flash_attn=True is ignored)
     type_k=8,
     type_v=8,
     n_threads=max(4, (os.cpu_count() or 8) // 2),
@@ -62,7 +62,24 @@ def add_nvidia_dlls() -> None:
                     os.environ["PATH"] = str(d) + os.pathsep + os.environ["PATH"]
 
 
-def load(model_id: str, **overrides):
+STATE = ROOT / ".kit-state.json"
+
+
+def tuned(model_id: str) -> dict:
+    """Settings saved by `kit.py tune` for this model (empty if never tuned)."""
+    import json
+
+    try:
+        return json.loads(STATE.read_text()).get("tuned", {}).get(model_id, {}).get("kwargs", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def load(model_id: str, vision: bool = False, **overrides):
+    """Load a model with the kit's defaults, then any saved tuning, then overrides.
+
+    vision=True attaches the model's image/audio projector (if it has one).
+    """
     add_nvidia_dlls()
     from llama_cpp import Llama
 
@@ -71,16 +88,42 @@ def load(model_id: str, **overrides):
     rel, _, extra = REGISTRY[model_id]
     path = MODELS / rel
     if not path.exists():
-        sys.exit(
-            f"{path} not found. run: python setup_env.py (or split_tool.py join models)"
-        )
-    kw = {**DEFAULTS, **extra, **overrides}
-    print(
-        f"loading {model_id} ({path.stat().st_size / 1e9:.1f} GB) with {kw}", flush=True
-    )
+        sys.exit(f"{path} not found. Run: py -3.14 kit.py setup")
+    kw = {**DEFAULTS, **extra, **tuned(model_id), **overrides}
+    if vision and "chat_handler" not in kw:
+        kw["chat_handler"] = media_handler(model_id)
+    shown = {k: v for k, v in kw.items() if k != "chat_handler"}
+    print(f"loading {model_id} ({path.stat().st_size / 1e9:.1f} GB) with {shown}", flush=True)
     return Llama(model_path=str(path), **kw)
 
 
 def mmproj(model_id: str):
     rel = REGISTRY[model_id][1]
-    return str(MODELS / rel) if rel else None
+    return str(MODELS / rel) if rel and (MODELS / rel).exists() else None
+
+
+def media_handler(model_id: str):
+    """Chat handler that lets the model read images (and audio for Gemma 4)."""
+    proj = mmproj(model_id)
+    if not proj:
+        sys.exit(f"{model_id} cannot read images: no vision file (choose qwen3.5-4b, qwen3.5-9b, gemma4-e4b or qwen3.6-35b-a3b)")
+    from llama_cpp import llama_multimodal as mm
+
+    if model_id.startswith("gemma4"):
+        return mm.Gemma4ChatHandler(mmproj_path=proj, verbose=False, enable_thinking=False)
+    if model_id.startswith(("qwen3.5", "qwen3.6")):
+        return mm.Qwen35ChatHandler(mmproj_path=proj, verbose=False, enable_thinking=False)
+    return mm.GenericMTMDChatHandler(chat_format=None, mmproj_path=proj, verbose=False)
+
+
+def media_part(path) -> dict:
+    """An OpenAI-style message part for an image or audio file."""
+    import base64, mimetypes
+
+    p = pathlib.Path(path)
+    data = base64.b64encode(p.read_bytes()).decode()
+    mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+    if mime.startswith("audio/"):
+        fmt = {"audio/mpeg": "mp3", "audio/x-wav": "wav", "audio/wav": "wav"}.get(mime, p.suffix.lstrip("."))
+        return {"type": "input_audio", "input_audio": {"data": data, "format": fmt}}
+    return {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}}

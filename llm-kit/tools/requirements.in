@@ -1,0 +1,18 @@
+# Top-level packages the kit installs on the Windows laptop (cp314, win_amd64).
+# Mirrors PACKAGES in kit.py, plus pypdf. Resolved by:
+#     python llm-kit/tools/build_bundle.py lock
+# llama_cpp_python is the JamePeng CUDA 12.8 build, not the PyPI release.
+llama_cpp_python==0.4.2+cu128
+nvidia-cuda-runtime-cu12
+nvidia-cublas-cu12
+huggingface_hub
+gradio
+fastapi
+uvicorn
+sse-starlette
+starlette-context
+pydantic-settings
+diskcache
+jinja2
+numpy
+pypdf

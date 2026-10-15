@@ -1,0 +1,63 @@
+{
+  "name": "llm-kit: chat agent",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "a1c0f6e2-1b1a-4d8e-9a10-000000000001",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 0],
+      "webhookId": "a1c0f6e2-1b1a-4d8e-9a10-0000000000a1"
+    },
+    {
+      "parameters": {
+        "promptType": "auto",
+        "text": "={{ $json.chatInput }}",
+        "options": {
+          "systemMessage": "You are a helpful assistant. Keep answers short and clear."
+        }
+      },
+      "id": "a1c0f6e2-1b1a-4d8e-9a10-000000000002",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "id",
+          "value": "granite-4.2-8b"
+        },
+        "responsesApiEnabled": false,
+        "options": {}
+      },
+      "id": "a1c0f6e2-1b1a-4d8e-9a10-000000000003",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [260, 220],
+      "credentials": {
+        "openAiApi": {
+          "id": null,
+          "name": "llm-kit (laptop)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [[{ "node": "AI Agent", "type": "main", "index": 0 }]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{ "node": "AI Agent", "type": "ai_languageModel", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" },
+  "active": false
+}
