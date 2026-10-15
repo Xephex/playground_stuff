@@ -1,4 +1,4 @@
-"""Browser chat UI (Gradio) with a model picker. Opens on http://127.0.0.1:7860
+r"""Browser chat UI (Gradio) with a model picker. Opens on http://127.0.0.1:7860
 
 python run\webchat.py
 python run\webchat.py --model qwen3.6-35b-a3b --n-cpu-moe 30
@@ -57,7 +57,7 @@ def main() -> None:
             label="model (switching reloads; takes a few seconds)",
         )
         system = gr.Textbox("You are a helpful assistant.", label="system prompt")
-        gr.ChatInterface(reply, additional_inputs=[model, system], type="messages")
+        gr.ChatInterface(reply, additional_inputs=[model, system])
     demo.launch(server_name="127.0.0.1", server_port=a.port, inbrowser=True)
 
 

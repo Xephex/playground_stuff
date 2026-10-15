@@ -1,4 +1,4 @@
-"""Terminal chat. Streams tokens and prints tokens/sec after each reply.
+r"""Terminal chat. Streams tokens and prints tokens/sec after each reply.
 
 python run\chat.py --model qwen3.5-4b
 python run\chat.py --model qwen3.6-35b-a3b --n-cpu-moe 30

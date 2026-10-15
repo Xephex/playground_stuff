@@ -1,4 +1,4 @@
-"""OpenAI-compatible API on http://127.0.0.1:8080/v1 for editors and tools
+r"""OpenAI-compatible API on http://127.0.0.1:8080/v1 for editors and tools
 (Continue, Cline, Open Interpreter, any `openai` client with base_url set).
 
     python run\serve.py --model qwen3.5-9b

@@ -2,59 +2,82 @@
 
 Everything needed to run open-weight models on an NVIDIA RTX PRO 2000 Blackwell laptop (8 GB VRAM, 64 GB RAM) using only `python.exe`. No installers, no `.exe`/`.msi`, no internet after cloning.
 
-Large files are stored as `*.partNNN` chunks (under 95 MB each) because GitHub rejects files over 100 MB. `setup_env.py` reassembles them.
+Large files are stored as `*.partNNN` chunks (under 95 MB each) because GitHub rejects files over 100 MB. `kit.py setup` reassembles them.
 
-## Requirements on the laptop
+## Start here
 
-- Python **3.14** x64 (the bundled wheels are `cp314-win_amd64`; built and checked against 3.14.7). Check with `python --version`. If `python` still starts an older version, use `py -3.14` in place of `python` in every command below.
-- NVIDIA driver 570 or newer (`nvidia-smi` lives in `C:\Windows\System32`, so it is allowed to run).
-- ~55 GB free disk during setup (chunks + reassembled files; delete the `.part` files afterwards, which `setup_env.py` does once each file verifies).
+Everything is driven by one tool, `kit.py`. Open **Command Prompt** (Start, type `cmd`, Enter) and paste these lines one at a time.
 
-## Updating an existing copy (Python 3.12 -> 3.14)
-
-Already cloned this before? Do not re-clone. `git pull` downloads only what changed: the Python 3.14 wheels and the model chunks that were missing (gpt-oss-20b was incomplete, granite-4.2-8b was absent). Models you already reassembled are verified and skipped, not rebuilt.
-
-```
-cd playground_stuff
-git pull --no-rebase
-cd llm-kit
-py -3.14 --version
-py -3.14 setup_env.py
-```
-
-`py -3.14 --version` must print `Python 3.14.x`; install Python 3.14 first if it does not. If you set up a venv, make a new one, because a 3.12 venv cannot be upgraded in place:
-
-```
-py -3.14 -m venv .venv314
-.venv314\Scripts\python.exe setup_env.py --no-join
-```
-
-Use `--no-rebase` exactly as shown: setup deletes `.part` files after reassembling them, and a rebasing pull refuses to run with those deletions pending. Do not run `git checkout -- .` or `git stash` to "clean up"; that would restore every deleted chunk (about 40 GB). Your reassembled `.gguf` files are untracked and `git pull` leaves them alone.
-
-## Setup (once)
-
+**First time on this laptop:**
 ```
 git clone https://github.com/Xephex/playground_stuff
 cd playground_stuff\llm-kit
-python setup_env.py
+py -3.14 kit.py setup
 ```
 
-`setup_env.py` joins the chunks, verifies every file against its `.sha256`, installs the wheels from `wheels\` with `python -m pip install --no-index`, and runs `run\check_gpu.py`, which must print a CUDA device. If it prints `NO CUDA DEVICE`, the driver is too old or the CUDA DLLs did not load; see Troubleshooting.
+**Already cloned it before (you had the Python 3.12 version):**
+```
+cd playground_stuff\llm-kit
+git pull --no-rebase
+py -3.14 kit.py setup
+```
 
-Prefer a venv? `python -m venv .venv` then `.venv\Scripts\python.exe setup_env.py --no-join` after a first plain `python setup_env.py`. Always invoke the venv's `python.exe` directly; `Activate.ps1` and the `Scripts\*.exe` shims may be blocked.
+The first setup takes 10-30 minutes; it reassembles about 50 GB of model files. It ends with `GPU OK: NVIDIA RTX PRO 2000 Blackwell ...`. Running it again is safe: anything already done is checked and skipped.
 
-## Use
+**Every time after that:**
+```
+cd playground_stuff\llm-kit
+py -3.14 kit.py
+```
+That opens this menu:
+```
+================ llm-kit ================
+ Python 3.14.7   GPU: NVIDIA RTX PRO 2000 Blackwell Generation Laptop GPU
+ Setup: ready   Models ready: 6/6
+------------------------------------------
+ 1) Chat here in this window
+ 2) Chat in the browser
+ 3) Start API server for editors (OpenAI-compatible)
+ 4) Setup / repair
+ 5) Update from GitHub, then setup
+ 6) Status details
+ q) Quit
+>
+```
+Type a number and press Enter. Options 1-3 then ask which model; press Enter for the default. To leave a chat, type `exit`. To stop the browser chat or API server, press `Ctrl+C`.
+
+### If something goes wrong
+
+| What you see | What to do |
+|---|---|
+| `'py' is not recognized` or `No suitable Python runtime found` | Python 3.14 is not installed. In the Microsoft Store, search **Python 3.14** and click **Get** (no admin needed). Then rerun the command. |
+| `'git' is not recognized` | Git is not installed. Download the repo as a ZIP from GitHub instead (green **Code** button, **Download ZIP**), unzip it, and run `py -3.14 kit.py setup` inside `llm-kit`. To update later, download the ZIP again. |
+| `Not enough disk` | The first setup needs about 55 GB free. Free up space and run setup again; finished files are kept. |
+| `GPU check failed` | The tool lists the likely cause. Usually the NVIDIA driver is older than 570 (`nvidia-smi` shows the version). |
+| `DLL load failed` | Your organization blocks DLLs from user folders. Ask IT to allow this folder; nothing in the kit can work around that. |
+| Out of memory with a big model | Use a smaller model, or close the browser and other GPU apps. |
+
+Do **not** run `git checkout -- .`, `git stash` or `git reset` to "clean up". Setup deletes the downloaded chunk files after joining them, and those commands bring all of them back (about 40 GB).
+
+### Direct commands (optional)
+
+The menu does all of this. These are for scripts or shortcuts; all of them take `--model ID` to skip the model picker.
 
 | What | Command |
 |---|---|
-| Terminal chat | `python run\chat.py --model qwen3.5-4b` |
-| Browser chat (model picker, http://127.0.0.1:7860) | `python run\webchat.py` |
-| OpenAI-compatible API for editors (http://127.0.0.1:8080/v1) | `python run\serve.py --model qwen3.5-9b` |
-| Big MoE model, experts in RAM | `python run\chat.py --model qwen3.6-35b-a3b --n-cpu-moe 99` |
-| Same, faster once you know VRAM headroom | `--n-cpu-moe 30` (lower = more experts on GPU; raise if you get out-of-memory) |
-| Image input | `python run\chat.py --model gemma4-e4b --image screenshot.png` |
+| Chat in this window | `py -3.14 kit.py chat --model qwen3.5-4b` |
+| Browser chat (http://127.0.0.1:7860) | `py -3.14 kit.py web` |
+| API for editors (http://127.0.0.1:8080/v1) | `py -3.14 kit.py serve --model qwen3.5-9b` |
+| Check what is installed and ready | `py -3.14 kit.py status` |
+| Update from GitHub and install | `py -3.14 kit.py update` |
+| Big MoE model, tuning VRAM use | `py -3.14 run\chat.py --model qwen3.6-35b-a3b --n-cpu-moe 30` (lower = faster, more VRAM) |
+| Image input | `py -3.14 run\chat.py --model gemma4-e4b --image screenshot.png` |
 
-Every command is `python <script>`; nothing in this kit is launched by its own executable.
+## Requirements
+
+- Windows 11 x64 with NVIDIA driver 570 or newer (`nvidia-smi` lives in `C:\Windows\System32`, so it is allowed to run).
+- Python **3.14** x64; the bundled wheels are `cp314-win_amd64`, built and checked against 3.14.7. The Microsoft Store build is fine and needs no admin rights.
+- About 55 GB free disk during the first setup.
 
 ## Models included
 
@@ -79,9 +102,9 @@ Speeds are from published runs on 8 GB RTX 4060 / 2080 cards; this GPU has more 
 
 Be aware of what you are doing: the llama-cpp wheel is a community build, not signed by NVIDIA or Microsoft. Its SHA-256 is in `wheels/SHA256SUMS`. If your workplace policy treats unsigned native code as prohibited regardless of mechanism, ask before using it.
 
-## Troubleshooting
+## Troubleshooting (details)
 
-- `check_gpu.py` says `NO CUDA DEVICE`: run `nvidia-smi`; driver must be >= 570. Then `python -c "import nvidia.cublas, os; print(os.listdir(os.path.dirname(nvidia.cublas.__file__)+'/bin'))"` should list `cublas64_12.dll`.
+- GPU check says `NO CUDA DEVICE`: run `nvidia-smi`; driver must be >= 570. Then `py -3.14 -c "import nvidia.cublas, os; print(os.listdir(os.path.dirname(nvidia.cublas.__file__)+'/bin'))"` should list `cublas64_12.dll`.
 - `ImportError: DLL load failed` on `import llama_cpp`: DLL rules are on, or Python is not 3.14 x64.
 - Out of memory loading `qwen3.5-9b`: close the browser, or add `--n-ctx 8192`.
 - MoE model slow: lower `--n-cpu-moe` in steps of 5 until it fails to load, then go back one step.
@@ -91,7 +114,8 @@ Be aware of what you are doing: the llama-cpp wheel is a community build, not si
 
 ```
 llm-kit/
-  setup_env.py        reassemble + install + GPU check
+  kit.py              the tool: menu, setup, update, chat, web, serve, status
+  setup_env.py        older one-shot setup script (kit.py setup replaces it)
   split_tool.py       split/join/verify (python split_tool.py --help)
   wheels/             win_amd64 cp314 wheels (+ .part chunks for the big one), SHA256SUMS
   models/<name>/      .gguf files as .partNNN chunks + .sha256
