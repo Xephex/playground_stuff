@@ -65,7 +65,7 @@ The server runs one model at a time. To switch, stop it and choose 4 again.
 | `'py' is not recognized` or `No suitable Python runtime found` | Python 3.14 is not installed. In the Microsoft Store, search **Python 3.14** and click **Get** (no admin needed). Then rerun the command. |
 | `'git' is not recognized` | Git is not installed. Download the repo as a ZIP from GitHub instead (green **Code** button, **Download ZIP**), unzip it, and run `py -3.14 kit.py setup` inside `llm-kit`. To update later, download the ZIP again. |
 | `Not enough disk` | The first setup needs about 55 GB free. Free up space and run setup again; finished files are kept. |
-| `GPU check failed` | The tool lists the likely cause. Usually the NVIDIA driver is older than 570 (`nvidia-smi` shows the version). |
+| `GPU check failed` / `NO CUDA DEVICE` | Run `py -3.14 kit.py gpucheck`. It asks the NVIDIA driver directly and prints the reason: GPU switched off (laptop graphics mode set to integrated/eco, battery saver, or disabled in Device Manager), driver too old, or a missing DLL. |
 | `DLL load failed` | Your organization blocks DLLs from user folders. Ask IT to allow this folder; nothing in the kit can work around that. |
 | Out of memory with a big model | Use a smaller model, or close the browser and other GPU apps. |
 

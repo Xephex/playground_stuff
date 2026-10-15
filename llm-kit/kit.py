@@ -284,9 +284,8 @@ def do_gpucheck(_=None):
         return True
     say(r.stderr.rstrip()[-2000:])
     save_state(gpu_ok_python=None)
-    say("\nGPU check failed. Common causes:")
-    say("  - NVIDIA driver older than 570: update the driver (IT may need to).")
-    say("  - 'DLL load failed': your organization blocks DLLs from user folders; ask IT for an exception for this folder.")
+    say("\nGPU check failed. The lines above say why (they come from the NVIDIA driver itself).")
+    say("Models still run on the CPU meanwhile, just much slower.")
     return False
 
 

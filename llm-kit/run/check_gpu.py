@@ -33,28 +33,58 @@ if gpu:
     print(f"\nGPU OK: {gpu[0][1]}")
     sys.exit(0)
 
-# No GPU device: find out why ggml-cuda.dll did not load.
-print("\nNO CUDA DEVICE.")
-cuda = lib_dir / "ggml-cuda.dll"
-if os.name == "nt" and cuda.exists():
-    try:
-        ctypes.WinDLL(str(cuda))
-        print("ggml-cuda.dll loads, but it found no usable GPU: the NVIDIA driver is probably older than 570.")
-    except OSError as e:
-        print(f"ggml-cuda.dll failed to load: {e}")
-        for dep in ("nvcuda.dll", "cudart64_12.dll", "cublas64_12.dll", "cublasLt64_12.dll"):
-            try:
-                ctypes.WinDLL(dep)
-                print(f"  {dep:<20} ok")
-            except OSError as e2:
-                hint = {
-                    "nvcuda.dll": "NVIDIA driver not installed",
-                    "cudart64_12.dll": "nvidia-cuda-runtime-cu12 wheel missing; rerun setup",
-                    "cublas64_12.dll": "nvidia-cublas-cu12 wheel missing; rerun setup",
-                    "cublasLt64_12.dll": "nvidia-cublas-cu12 wheel missing; rerun setup",
-                }[dep]
-                print(f"  {dep:<20} MISSING ({hint}): {e2}")
-        print("If every dependency is ok, your organization is blocking DLL loads from this folder.")
-else:
-    print("Check: NVIDIA driver >= 570, nvidia-*-cu12 wheels installed, Python 3.14.")
+# No GPU device: ask CUDA itself why, instead of guessing.
+print("\nNO CUDA DEVICE. Asking the NVIDIA driver directly:")
+win = os.name == "nt"
+CU_ERR = {
+    100: "no CUDA-capable GPU visible. The NVIDIA GPU is switched off or hidden: check the laptop's "
+         "graphics mode (set Hybrid/Discrete, not Integrated/Eco/iGPU-only), that the laptop is not in "
+         "battery saver, and that the GPU is enabled in Device Manager > Display adapters.",
+    35: "the NVIDIA driver is too old for this CUDA version. Update the driver (570 or newer).",
+    3: "the driver could not initialize. Reboot; if it persists, reinstall the NVIDIA driver.",
+    999: "unknown driver error. Reboot; if it persists, reinstall the NVIDIA driver.",
+}
+
+
+def cu(lib, fn, *args):
+    return getattr(lib, fn)(*args)
+
+
+try:
+    drv = ctypes.WinDLL("nvcuda.dll") if win else ctypes.CDLL("libcuda.so.1")
+except OSError as e:
+    print(f"  NVIDIA driver library not found ({e}).")
+    print("  The NVIDIA driver is not installed, or this is not the NVIDIA GPU's Windows session.")
+    sys.exit(1)
+
+ver = ctypes.c_int()
+cu(drv, "cuDriverGetVersion", ctypes.byref(ver))
+print(f"  driver supports CUDA {ver.value // 1000}.{ver.value % 1000 // 10}")
+rc = cu(drv, "cuInit", 0)
+if rc != 0:
+    print(f"  cuInit failed with error {rc}: {CU_ERR.get(rc, 'see the CUDA error list')}")
+    sys.exit(1)
+n = ctypes.c_int()
+cu(drv, "cuDeviceGetCount", ctypes.byref(n))
+print(f"  driver sees {n.value} GPU(s)")
+for i in range(n.value):
+    dev, name = ctypes.c_int(), ctypes.create_string_buffer(256)
+    cu(drv, "cuDeviceGet", ctypes.byref(dev), i)
+    cu(drv, "cuDeviceGetName", name, 256, dev)
+    print(f"    {i}: {name.value.decode()}")
+if n.value == 0:
+    print(f"  {CU_ERR[100]}")
+    sys.exit(1)
+
+try:
+    rt = ctypes.WinDLL("cudart64_12.dll") if win else ctypes.CDLL("libcudart.so.12")
+    rver, cnt = ctypes.c_int(), ctypes.c_int()
+    cu(rt, "cudaRuntimeGetVersion", ctypes.byref(rver))
+    err = cu(rt, "cudaGetDeviceCount", ctypes.byref(cnt))
+    print(f"  CUDA runtime {rver.value // 1000}.{rver.value % 1000 // 10}: error {err}, {cnt.value} GPU(s)")
+    if err:
+        print(f"  {CU_ERR.get(err, 'runtime error; send this output')}")
+except OSError as e:
+    print(f"  CUDA runtime DLL failed to load ({e}): rerun setup.")
+print("  The driver sees the GPU but llama.cpp's CUDA plug-in did not register it. Send this whole output.")
 sys.exit(1)
